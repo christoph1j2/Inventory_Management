@@ -1,0 +1,185 @@
+﻿@page "/halle"
+@rendermode InteractiveServer
+@inject NavigationManager NavigationManager
+@using System.Web;
+
+<PageTitle>Inventory Management System</PageTitle>
+
+<h1>@selectedWarehouse</h1>
+<MudTable Items="@stock_items"
+          Dense="@true" Hover="@true" Bordered="@true" Striped="@true" CanCancelEdit="@true"
+          CustomHeader="@true">
+    <HeaderContent>
+        <MudTHeadRow>
+            <MudTh>Material</MudTh>
+            <MudTh>Soll</MudTh>
+            <MudTh>Ist</MudTh>
+            <MudTh>Action</MudTh>
+        </MudTHeadRow>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Material">@context.Material</MudTd>
+        <MudTd DataLabel="Soll">@context.Soll</MudTd>
+        <MudTd DataLabel="Ist">@context.Ist</MudTd>
+        <MudTd DataLabel="Action">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => OnAddClick(context))">
+                Increase
+            </MudButton>
+        </MudTd>
+    </RowTemplate>
+</MudTable>
+
+    <MudDialog IsVisible="@showOverlay" CloseByDocumentClick="@(() => CloseOverlay())">
+      <DialogContent>
+        <h3>Add for @selectedMaterial</h3>
+        <MudTextField Label="Amount" Variant="Variant.Filled" @bind-Value="@addValue" />
+      </DialogContent>
+      <DialogActions>
+        <MudButton Variant="Variant.Filled" OnClick="@CloseOverlay">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => UpdateIst(selectedMaterial, addValue))">
+            Add
+        </MudButton>
+      </DialogActions>
+    </MudDialog>
+
+@code {
+    public class InventoryItem
+    {
+        public string Material { get; set; }
+        public int Soll { get; set; }
+        public int Ist { get; set; }
+    }
+    public class Warehouse
+    {
+        public string Material { get; set; }
+        public int Ist { get; set; }
+        public int Soll { get; set; }
+        public object Add { get; set; }
+    }
+    List<Warehouse> stock_items = new List<Warehouse>(){};
+
+    // code for different warehouses
+    private string selectedWarehouse;
+    private string _previouslySelectedWarehouse;
+    List<InventoryItem> inventoryData = new List<InventoryItem>();
+    bool firstRender = true;
+
+    protected override void OnInitialized()
+    {
+        NavigationManager.LocationChanged += HandleLocationChanged;
+    }
+    protected override async Task OnInitializedAsync()
+    {
+        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        var query = new Uri(uri.ToString()).Query;
+        if (!string.IsNullOrEmpty(query))
+        {
+            var queryParams = HttpUtility.ParseQueryString(query);
+            selectedWarehouse = queryParams["warehouse"];
+            _previouslySelectedWarehouse = selectedWarehouse;
+            firstRender = false;
+            await LoadDataFromCSV(selectedWarehouse);
+        }
+    }
+    private async void HandleLocationChanged(object sender, LocationChangedEventArgs e)
+    {
+        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        var query = new Uri(uri.ToString()).Query;
+        var queryParams = !string.IsNullOrEmpty(query) ? HttpUtility.ParseQueryString(query) : null;
+        var selectedWarehouse = queryParams != null ? queryParams["warehouse"] : null;
+
+        if (selectedWarehouse != null && selectedWarehouse != _previouslySelectedWarehouse)
+        {
+            stock_items.Clear();
+            if (!string.IsNullOrEmpty(selectedWarehouse))
+            {
+                await LoadDataFromCSV(selectedWarehouse);
+            }
+            _previouslySelectedWarehouse = selectedWarehouse;
+            this.selectedWarehouse = selectedWarehouse;
+            StateHasChanged();
+        }
+    }
+
+    public void Dispose()
+    {
+        NavigationManager.LocationChanged -= HandleLocationChanged;
+    }
+
+    // code for csv loading
+    public async Task LoadDataFromCSV(string warehouseName)
+    {
+        string file = $"../Inventory_Management/Components/data/{warehouseName}.csv";
+
+        try
+        {
+            using (var reader = new StreamReader(file))
+            {
+                await reader.ReadLineAsync();
+                while (!reader.EndOfStream)
+                {
+                    string line = await reader.ReadLineAsync();
+                    string[] values = line.Split(new[] { ',' }, StringSplitOptions.None);
+                    stock_items.Add(new Warehouse { Material = values[0], Soll = int.Parse(values[1]), Ist = int.Parse(values[2]) });
+
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("asdfasdfasdf");
+            throw;
+        }
+    }
+    //code for csv saving
+    public void SaveDataToCSV(string warehouseName)
+    {
+        string file = $"../Inventory_Management/Components/data/{warehouseName}.csv";
+
+        try
+        {
+            using (var writer = new StreamWriter(file))
+            {
+                writer.WriteLine("Material,Soll,Ist");
+                foreach (var action in stock_items)
+                {
+                    writer.WriteLine($"{action.Material},{action.Soll},{action.Ist}");
+                }
+            }
+        }
+        catch(Exception ex)
+        {
+            Console.WriteLine("ERROR WRITING TO CSV FILE");
+            throw;
+        }
+    }
+
+
+    // code for the overlay
+    private bool showOverlay = false;
+    private string selectedMaterial = "";
+    private int addValue = 0;
+
+    private void OnAddClick(Warehouse item)
+    {
+        selectedMaterial = item.Material;
+        showOverlay = true;
+    }
+
+    private void CloseOverlay()
+    {
+        showOverlay = false;
+        addValue = 0;
+    }
+
+    private void UpdateIst(string material, int value)
+    {
+        var item = stock_items.FirstOrDefault(i => i.Material == material);
+        if (item != null)
+        {
+            item.Ist += value;
+            SaveDataToCSV(selectedWarehouse);
+        }
+        CloseOverlay();
+    }
+}
